@@ -13,16 +13,9 @@ from sklearn.model_selection import train_test_split
 from torch import nn, optim
 
 ### configs
-n_train_days = 5
-ts_train_range = datetime(2019, 1, 1) + timedelta(days=n_train_days)
-print('training for {0} days of sensor data: '.format(n_train_days))
-
 sns.set(style='whitegrid', palette='muted', font_scale=1.2)
-
 HAPPY_COLORS_PALETTE = ["#01BEFE", "#FFDD00", "#FF7D00", "#FF006D", "#ADFF02", "#8F00FF"]
-
 sns.set_palette(sns.color_palette(HAPPY_COLORS_PALETTE))
-
 rcParams['figure.figsize'] = 12, 8
 
 RANDOM_SEED = 42
@@ -30,35 +23,8 @@ np.random.seed(RANDOM_SEED)
 torch.manual_seed(RANDOM_SEED)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-### Reading sensor data and ETL process
-ts_df = pd.read_parquet('sensor_data_ts', engine='pyarrow')
 
-class_names = ['Normal', 'GasAlarm', 'GasHigh', 'GasLow', 'GasSTEL', 'GasTWA']
-
-columns = list(ts_df.columns)
-ts_df = ts_df.rename(columns={'message_code_name': 'target'})
-# ts_df['target'] = ts_df['target'].astype('str')
-ts_df.loc[ts_df['target'] == 'SensorAlarmMsg', 'target'] = class_names[1]
-ts_df.loc[ts_df['target'] == 'GasHighAlarmMsg', 'target'] = class_names[2]
-ts_df.loc[ts_df['target'] == 'GasLowAlarmMsg', 'target'] = class_names[3]
-ts_df.loc[ts_df['target'] == 'GasSTELAlarmMsg', 'target'] = class_names[4]
-ts_df.loc[ts_df['target'] == 'GasTWAAlarmMsg', 'target'] = class_names[5]
-
-ts_df = ts_df.sort_values(by=['datetime'])
-
-ts_df = ts_df.set_index(pd.DatetimeIndex(ts_df['datetime']), drop=True)
-
-ts_df = ts_df[ts_df['datetime'] < ts_train_range]
-
-# original data:  28 < latitude < 30 and  -99 < longitude < -98
-# Narrow down to one operation site
-ts_df = ts_df[ts_df['latitude'] < 28.7]
-ts_df = ts_df[ts_df['longitude'] > -98.8]
-
-ts_df = ts_df.drop(labels=['datetime', 'latitude', 'longitude', 'message_code_id'], axis=1)
-
-
-## helper function: convert to tensor
+# Helper function -- convert to tensor dataset
 def create_dataset(df):
     sequences = df.astype(np.float32).to_numpy().tolist()
     dataset = [torch.tensor(s).unsqueeze(1).float() for s in sequences]
@@ -186,9 +152,6 @@ def train_model(model, train_dataset, val_dataset, n_epochs):
         train_loss = np.mean(train_losses)
         val_loss = np.mean(val_losses)
 
-        print(type(train_losses))
-        print(type(train_loss))
-        print(type(val_loss))
         history['train'].append(train_loss)
         history['val'].append(val_loss)
 
@@ -203,6 +166,12 @@ def train_model(model, train_dataset, val_dataset, n_epochs):
 
 
 def main():
+    ts = pd.read_parquet('timeseries_resampled.parquet')
+
+    train_end_date = datetime(2020, 10, 1)
+    ts_df = ts[:train_end_date]
+    # print(ts_df.tail())
+
     normal_df = ts_df[ts_df['target'] == 'Normal'].drop(labels='target', axis=1)
     anomaly_df = ts_df[ts_df['target'] != 'Normal'].drop(labels='target', axis=1)
 
@@ -224,25 +193,16 @@ def main():
         model,
         train_dataset,
         val_dataset,
-        n_epochs=10
+        n_epochs=50
     )
 
-    ax = plt.figure().gca()
-
-    ax.plot(history['train'])
-    ax.plot(history['val'])
-    plt.ylabel('Loss')
-    plt.xlabel('Epoch')
-    plt.legend(['train', 'test'])
-    plt.title('Loss over training epochs')
-    plt.savefig('loss_epochs.svg')
-
-    MODEL_PATH = 'model_{0}days.pth'.format(n_train_days)
+    MODEL_PATH = 'model_{0}.pth'.format(train_end_date.date())
+    VAR_PATH = 'model_vars_{0}.pkl'.format(train_end_date.date())
 
     torch.save(model, MODEL_PATH)
 
-    with open('train_variables_{0}days.pkl'.format(n_train_days), 'wb') as f:
-        pickle.dump([n_train_days, history, train_dataset, val_dataset, test_normal_dataset, test_anomaly_dataset], f)
+    with open(VAR_PATH, 'wb') as f:
+        pickle.dump([train_end_date, history, train_dataset, val_dataset, test_normal_dataset, test_anomaly_dataset], f)
 
     f.close()
 

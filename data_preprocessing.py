@@ -46,11 +46,6 @@ def main():
     ts_df = ts_df.sort_values(by=['datetime'])
     ts_df = ts_df.set_index(pd.DatetimeIndex(ts_df['datetime']), drop=True)
 
-    n_train_days = 30
-    ts_train_range = datetime(2019, 1, 1) + timedelta(days=n_train_days)
-    print('training for {0} days of sensor data: '.format(n_train_days))
-    ts_df = ts_df[ts_df['datetime'] < ts_train_range]
-
     # original data:  28 < latitude < 30 and  -99 < longitude < -98
     # Narrow down to one operation site
 
@@ -58,39 +53,42 @@ def main():
     ts_df = ts_df[ts_df['longitude'] > -98.8]
     print('No. records for San Antonio site: ', ts_df['target'].count())
 
-    ts_df = ts_df.drop(labels=['datetime', 'latitude', 'longitude', 'message_code_id'],
-                       axis=1)
-    ts_columns = ts_df.columns
+    ts = ts_df.drop(labels=['datetime', 'latitude', 'longitude', 'message_code_id'],
+                    axis=1)
 
-    print(ts_columns)
-    print(ts_df.head())
+    # print(len(ts.index))
+    # print(ts.loc[datetime(2019, 1, 1, 21, 40):].head(50))
+
+    ts_resampled = ts.groupby(pd.Grouper(freq='15T')).max().dropna()
+    # print(len(ts_resampled.index))
+    # print(ts_resampled.head(30))
+
+    # ts.to_parquet('timeseries_main.parquet')
+    # ts_resampled.to_parquet('timeseries_resampled.parquet')
+
+    # n_train_days = 30
+    # ts_train_range = datetime(2019, 1, 1) + timedelta(days=n_train_days)
+    # print('data time range for {0} days of sensor data: '.format(n_train_days))
+    # ts = ts.loc[ts.index < ts_train_range]
+    #
+    # ts_columns = ts.columns
+    #
+    # print(ts_columns)
+    # print(ts.head())
     # print(ts_df.dtypes)
 
     # Data Preliminary Analysis
 
     # count number of distinct target values (must be less than or equal to 6)
-    print('No. of distinct records for each target class: \n', ts_df['target'].value_counts())
+    print('No. of distinct records for each target class: \n', ts['target'].value_counts())
 
-    ax = sns.countplot(x=ts_df.target)
+    ax = sns.countplot(x=ts.target)
     ax.set_xticklabels(class_names)
-    # fig1 = ax.get_figure()
-    # fig1.savefig('target_class_counts.svg')
 
-    normal_df = ts_df[ts_df['target'] == 'Normal'].drop(labels='target', axis=1)
-    anomaly_df = ts_df[ts_df['target'] != 'Normal'].drop(labels='target', axis=1)
+    normal_df = ts[ts['target'] == 'Normal'].drop(labels='target', axis=1)
+    anomaly_df = ts[ts['target'] != 'Normal'].drop(labels='target', axis=1)
 
     test = normal_df[(normal_df['LEL'] != 0) | (normal_df['H2S'] != 0)]
-    print(test.head(50))
-    # print(anomaly_df.head())
-    # with open('train_variables_{0}days.pkl'.format(n_train_days), 'wb') as f:
-    #     pickle.dump([normal_df, anomaly_df], f)
-
-    num_count_total = ts_df.target.count()
-    # print('No. of records in orgiinal timeseries: ', num_count_total)
-    smooth_df = ts_df.sample(int(num_count_total / 3))
-    # print('sampled: ', smooth_df.target.count())
-    # print('original: ', num_count_total)
-    # print(smooth_df.head())
 
     cols_plot = ['CO', 'H2S', 'LEL', 'O2', 'target']
     feature_colors = {'GasHigh': 'red', 'GasLow': 'yellow', 'Normal': 'green', 'GasAlarm': 'red'}
@@ -98,16 +96,13 @@ def main():
 
     for i, cls in enumerate(cols_plot):
         if cls == cols_plot[-1]:
-            axs[i].scatter(x=ts_df.index, y=ts_df[cls], c=ts_df[cls].map(feature_colors))
+            axs[i].scatter(x=ts.index, y=ts[cls], c=ts[cls].map(feature_colors))
         else:
-            axs[i].plot(ts_df[cls], linewidth=2)
+            axs[i].plot(ts[cls], linewidth=2)
             axs[i].set_ylabel(cls)
 
-    # fig2.savefig('data_analysis_timeseries.svg')
-    # plt.show()
-
     ### find null values
-    df = ts_df
+    df = ts
     columns = df.columns
 
     for col in columns:

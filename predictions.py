@@ -13,7 +13,7 @@ from sklearn.model_selection import train_test_split
 import pickle
 from torch import nn, optim
 
-from training import RecurrentAutoencoder, Encoder, Decoder
+from autoencoder_LSTM_training import RecurrentAutoencoder, Encoder, Decoder, create_dataset
 
 warnings.simplefilter('ignore')
 
@@ -47,40 +47,37 @@ def predict(model, dataset):
     return predictions, losses
 
 
-NEW_PREDICTIONS = True
 THRESHOLD = 0.5
 
 
 def main():
-    with open('train_variables_30days.pkl', 'rb') as f:
-        n_train_days, history, train_dataset, val_dataset, test_normal_dataset, test_anomaly_dataset = pickle.load(f)
+    ts = pd.read_pickle('timeseries_main.pkl')
 
-    model = torch.load('model_{0}days.pth'.format(n_train_days), map_location=lambda storage, loc: storage)
+    train_end_date = datetime(2020, 6, 1)
+    # with open('train_var.pkl', 'rb') as f:
+    #     train_end_date, history, train_dataset, val_dataset, test_normal_dataset, test_anomaly_dataset = pickle.load(f)
 
-    if not NEW_PREDICTIONS:
-        with open('predictions_{0}days.pkl'.format(n_train_days), 'rb') as f:
-            train_losses, normalset_pred_losses, anomaly_pred_losses, anomaly_predictions = pickle.load(f)
+    # model = torch.load('model_{0}days.pth'.format(train_end_date), map_location=lambda storage, loc: storage)
+    model = torch.load('model_{0}days.pth'.format(30), map_location=lambda storage, loc: storage)
 
-        correct = sum(l <= THRESHOLD for l in normalset_pred_losses)
-        print(f'Correct normal predictions: {correct}/{len(test_normal_dataset)}')
-        anomaly_dataset = test_anomaly_dataset[:len(test_normal_dataset)]
-        correct = sum(l > THRESHOLD for l in anomaly_pred_losses)
-        print(f'Correct normal predictions: {correct}/{len(anomaly_dataset)}')
-    else:
-        _, train_losses = predict(model, train_dataset)
+    # test a new dataset
+    ts = ts.loc[ts.index < train_end_date]
+    # ts = ts[datetime(2019, 4, 1): datetime(2019, 4, 10)]
+    test_normal_ts = ts[ts['target'] == 'Normal'].drop(labels='target', axis=1)
+    test_anomaly_ts = ts[ts['target'] != 'Normal'].drop(labels='target', axis=1)
 
-        _, normalset_pred_losses = predict(model, test_normal_dataset)
+    test_normal_dataset, _, _ = create_dataset(test_normal_ts)
+    test_anomaly_dataset, _, _ = create_dataset(test_anomaly_ts)
 
-        correct = sum(l <= THRESHOLD for l in normalset_pred_losses)
-        print(f'Correct normal predictions: {correct}/{len(test_normal_dataset)}')
+    _, normalset_pred_losses = predict(model, test_normal_dataset)
 
-        anomaly_dataset = test_anomaly_dataset[:len(test_normal_dataset)]
-        anomaly_predictions, anomaly_pred_losses = predict(model, anomaly_dataset)
-        correct = sum(l > THRESHOLD for l in anomaly_pred_losses)
-        print(f'Correct anomaly predictions: {correct}/{len(anomaly_dataset)}')
+    correct = sum(l <= THRESHOLD for l in normalset_pred_losses)
+    print(f'Correct normal predictions: {correct}/{len(test_normal_dataset)}')
 
-        with open('predictions_{0}days.pkl'.format(n_train_days), 'wb') as f:
-            pickle.dump([train_losses, normalset_pred_losses, anomaly_pred_losses, anomaly_predictions], f)
+    anomaly_dataset = test_anomaly_dataset[:len(test_normal_dataset)]
+    anomaly_predictions, anomaly_pred_losses = predict(model, anomaly_dataset)
+    correct = sum(l > THRESHOLD for l in anomaly_pred_losses)
+    print(f'Correct anomaly predictions: {correct}/{len(anomaly_dataset)}')
 
     # ax = plt.figure(1).gca()
     # ax.plot(history['train'])
@@ -90,20 +87,27 @@ def main():
     # plt.legend(['train', 'test'])
     # plt.title('Loss over training epochs')
 
-    plt.figure(2, figsize=(16, 9), dpi=80)
-    plt.title('Training Loss Distribution', fontsize=16)
-    sns.distplot(train_losses, bins=50, kde=True)
-    plt.xlim([0.0, 1])
+    # plt.figure(2, figsize=(16, 9), dpi=80)
+    # plt.title('Training Loss Distribution', fontsize=16)
+    # # sns.distplot(train_losses, bins=100, kde=True)
+    # sns.histplot(train_losses, bins=100, kde=True, stat='density')
+    # # sns.kdeplot(train_losses)
+    # plt.xlim([0.0, 4.0])
 
-    plt.figure(3, figsize=(16, 9), dpi=80)
-    plt.title('Normal Loss Distribution', fontsize=16)
-    sns.distplot(normalset_pred_losses, bins=50, kde=True)
-
-    plt.figure(4, figsize=(16, 9), dpi=80)
-    plt.title('Anomaly Loss Distribution', fontsize=16)
-    sns.distplot(anomaly_pred_losses, bins=50, kde=True)
-
-    plt.show()
+    # plt.figure(3, figsize=(16, 9), dpi=80)
+    # plt.title('Normal Loss Distribution', fontsize=16)
+    # # sns.distplot(normalset_pred_losses, bins=50, kde=True)
+    # sns.histplot(normalset_pred_losses, bins=100, kde=True, stat='density')
+    # plt.xlim([0.0, 4.0])
+    #
+    # plt.figure(4, figsize=(16, 9), dpi=80)
+    # plt.title('Anomaly Loss Distribution', fontsize=16)
+    # # sns.distplot(anomaly_pred_losses, kde=True)
+    # sns.histplot(anomaly_pred_losses, binrange=(20, 100), kde=True, stat='density')
+    # # sns.kdeplot(anomaly_pred_losses)
+    # plt.xlim([0.0, 100.0])
+    #
+    # plt.show()
 
 
 if __name__ == '__main__':

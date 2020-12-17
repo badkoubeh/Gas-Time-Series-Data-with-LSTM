@@ -170,6 +170,7 @@ def main():
 
     train_end_date = datetime(2020, 10, 1)
     ts_df = ts[:train_end_date]
+    ts_validation = ts[train_end_date:datetime(2020, 11, 1)]
     # print(ts_df.tail())
 
     normal_df = ts_df[ts_df['target'] == 'Normal'].drop(labels='target', axis=1)
@@ -193,7 +194,7 @@ def main():
         model,
         train_dataset,
         val_dataset,
-        n_epochs=150
+        n_epochs=120
     )
 
     MODEL_PATH = 'model_{0}.pth'.format(train_end_date.date())
